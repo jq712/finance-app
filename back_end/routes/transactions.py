@@ -212,3 +212,66 @@ def get_summary():
             "period": period,
             "summary": summary
         }), 200
+
+@bp.route('/categories', methods=['GET'])
+@requires_auth
+def get_categories():
+    """Get all distinct categories used in transactions."""
+    user_id = get_user_id_from_auth0_id()
+    if not user_id:
+        return jsonify({"error": "User not registered"}), 403
+        
+    household_id = request.args.get('household_id')
+    
+    query = """
+        SELECT DISTINCT category 
+        FROM transactions 
+        WHERE category IS NOT NULL
+        AND (
+    """
+    
+    conditions = []
+    params = []
+    
+    if household_id:
+        # Verify membership
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                "SELECT 1 FROM household_members WHERE household_id = %s AND user_id = %s",
+                (household_id, user_id)
+            )
+            if not cursor.fetchone():
+                return jsonify({"error": "Not a member of the specified household"}), 403
+        
+        conditions.append("household_id = %s")
+        params.append(household_id)
+    else:
+        conditions.append("user_id = %s")
+        params.append(user_id)
+    
+    query += " OR ".join(conditions)
+    query += ") ORDER BY category ASC"
+    
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+        categories = [row['category'] for row in cursor.fetchall()]
+        
+        # Include default categories if needed
+        default_categories = [
+            "Groceries", 
+            "Dining", 
+            "Entertainment", 
+            "Transportation", 
+            "Housing", 
+            "Utilities", 
+            "Healthcare", 
+            "Shopping", 
+            "Travel", 
+            "Income"
+        ]
+        
+        # Merge categories from DB with defaults, avoiding duplicates
+        all_categories = list(set(categories + default_categories))
+        all_categories.sort()
+        
+        return jsonify(all_categories), 200

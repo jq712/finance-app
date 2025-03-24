@@ -18,7 +18,9 @@ def create_app(config_object=None):
         "origins": ["http://localhost:3000", "http://localhost:3001"],
         "supports_credentials": True, 
         "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "max_age": 86400  # Cache preflight requests for 24 hours
     }})
 
     # Initialize database 

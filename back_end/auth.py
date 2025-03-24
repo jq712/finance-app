@@ -33,6 +33,12 @@ def requires_auth(f):
     """Decorator to validate JWT tokens from Auth0"""
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Always allow OPTIONS requests to pass through without authentication
+        # This is necessary for CORS preflight requests
+        if request.method == 'OPTIONS':
+            return f(*args, **kwargs)
+        
+        # For all other requests, validate the token
         token = get_token_auth_header()
         if isinstance(token, tuple):  # Error response
             return token
