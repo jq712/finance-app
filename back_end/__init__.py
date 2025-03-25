@@ -1,7 +1,7 @@
-# myapp/__init__.py
 from flask import Flask
-from . import database
 from flask_cors import CORS
+
+from . import database
 
 def create_app(config_object=None):
     app = Flask(__name__)
@@ -13,15 +13,19 @@ def create_app(config_object=None):
     if config_object:
         app.config.from_object(config_object)
 
-    # Configure CORS
-    CORS(app, resources={r"/api/*": {
-        "origins": ["http://localhost:3000", "http://localhost:3001"],
-        "supports_credentials": True, 
-        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "expose_headers": ["Content-Type", "Authorization"],
-        "max_age": 86400  # Cache preflight requests for 24 hours
-    }})
+    # Configure CORS based on environment settings
+    if app.config.get('CORS_ENABLED', False):
+        cors_resources = {
+            r"/api/*": {
+                "origins": app.config.get('CORS_ORIGINS', []),
+                "supports_credentials": app.config.get('CORS_SUPPORTS_CREDENTIALS', True),
+                "allow_headers": app.config.get('CORS_ALLOW_HEADERS', ["Content-Type", "Authorization", "X-Requested-With"]),
+                "methods": app.config.get('CORS_METHODS', ["GET", "POST", "PUT", "DELETE", "OPTIONS"]),
+                "expose_headers": app.config.get('CORS_EXPOSE_HEADERS', ["Content-Type", "Authorization"]),
+                "max_age": app.config.get('CORS_MAX_AGE', 86400)
+            }
+        }
+        CORS(app, resources=cors_resources)
 
     # Initialize database 
     database.init_app(app)

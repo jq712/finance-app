@@ -1,6 +1,7 @@
-# config.py
+# back_end/config.py (updated)
 import os
 import logging
+import secrets
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 
@@ -13,7 +14,16 @@ class Config:
     TESTING = False
     
     # Security settings
-    CORS_ENABLED = True
+    SECRET_KEY = os.getenv('SECRET_KEY', secrets.token_hex(32))
+    
+    # CORS configuration
+    CORS_ENABLED = os.getenv('CORS_ENABLED', 'true').lower() == 'true'
+    CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:3001').split(',')
+    CORS_SUPPORTS_CREDENTIALS = os.getenv('CORS_SUPPORTS_CREDENTIALS', 'true').lower() == 'true'
+    CORS_ALLOW_HEADERS = os.getenv('CORS_ALLOW_HEADERS', 'Content-Type,Authorization,X-Requested-With').split(',')
+    CORS_METHODS = os.getenv('CORS_METHODS', 'GET,POST,PUT,DELETE,OPTIONS').split(',')
+    CORS_EXPOSE_HEADERS = os.getenv('CORS_EXPOSE_HEADERS', 'Content-Type,Authorization').split(',')
+    CORS_MAX_AGE = int(os.getenv('CORS_MAX_AGE', 86400))  # 24 hours in seconds
     
     # Database settings
     MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
@@ -22,7 +32,7 @@ class Config:
     MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')
     MYSQL_DB = os.getenv('MYSQL_DB', 'spending_tracker')
     MYSQL_CHARSET = 'utf8mb4'
-    MYSQL_CONNECTION_TIMEOUT = int(os.getenv('MYSQL_CONNECTION_TIMEOUT', 5))
+    MYSQL_CONNECTION_TIMEOUT = int(os.getenv('MYSQL_TIMEOUT', 5))
     MYSQL_POOL_SIZE = int(os.getenv('MYSQL_POOL_SIZE', 5))
     MYSQL_POOL_RECYCLE = int(os.getenv('MYSQL_POOL_RECYCLE', 3600))
     
@@ -41,88 +51,70 @@ class Config:
     @classmethod
     def init_logging(cls):
         """Initialize logging configuration"""
-        # Clear existing handlers to avoid duplicates
-        root_logger = logging.getLogger()
-        root_logger.handlers = []
-        root_logger.setLevel(getattr(logging, cls.LOG_LEVEL))
+
         
-        # Set up file logging
-        if not os.path.exists('logs'):
-            os.makedirs('logs')
-            
-        file_handler = RotatingFileHandler(
-            f'logs/{cls.LOG_FILE}',
-            maxBytes=cls.LOG_MAX_BYTES,
-            backupCount=cls.LOG_BACKUP_COUNT
-        )
-        file_handler.setFormatter(logging.Formatter(cls.LOG_FORMAT))
-        root_logger.addHandler(file_handler)
+    @classmethod
+    def validate_config(cls):
+        """Validate that required configuration values are set"""
+        required_vars = {
+            'MYSQL_HOST': cls.MYSQL_HOST,
+            'MYSQL_USER': cls.MYSQL_USER,
+            'MYSQL_PASSWORD': cls.MYSQL_PASSWORD,
+            'MYSQL_DB': cls.MYSQL_DB,
+            'AUTH0_DOMAIN': cls.AUTH0_DOMAIN,
+            'AUTH0_API_AUDIENCE': cls.AUTH0_API_AUDIENCE,
+        }
         
-        # Add console handler in development mode
-        if cls.DEBUG:
-            console_handler = logging.StreamHandler()
-            console_handler.setFormatter(logging.Formatter(cls.LOG_FORMAT))
-            root_logger.addHandler(console_handler)
-            logging.info("Console logging enabled for development")
+        missing = [key for key, value in required_vars.items() if not value]
+        
+        if missing:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+        
+        return True
+
 
 class DevelopmentConfig(Config):
     """Development configuration."""
     DEBUG = True
-    LOG_LEVEL = 'DEBUG'  # More verbose logging for development
+    LOG_LEVEL = 'DEBUG'
+    
+    # Development-specific CORS settings (if not defined in env)
+    CORS_ENABLED = True
     
     def __init__(self):
-        self._validate_config()
-        Config.init_logging()  # Initialize logging for development
-    
-    def _validate_config(self):
-        required_vars = [
-            'MYSQL_HOST', 'MYSQL_USER', 
-            'MYSQL_PASSWORD', 'MYSQL_DB',
-            'AUTH0_DOMAIN', 'AUTH0_API_AUDIENCE'
-        ]
-        missing = [var for var in required_vars if not os.getenv(var)]
-        if missing:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+        self.validate_config()
+        Config.init_logging()
+
 
 class ProductionConfig(Config):
     """Production configuration."""
+    SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', 'true').lower() == 'true'
+    SESSION_COOKIE_HTTPONLY = os.getenv('SESSION_COOKIE_HTTPONLY', 'true').lower() == 'true'
+    
+    # Production-specific CORS settings validation
     CORS_ENABLED = True
-    LOG_LEVEL = 'INFO'  # Less verbose for production
+    
+    # Database pool
+    MYSQL_POOL_SIZE = int(os.getenv('MYSQL_POOL_SIZE', 10))
+    
+    # Logging
+    LOG_LEVEL = 'INFO'
     
     def __init__(self):
-        self._validate_config()
+        self.validate_config()
         self._validate_security()
         Config.init_logging()
-    
-    def _validate_config(self):
-        required_vars = [
-            'MYSQL_HOST', 'MYSQL_USER', 
-            'MYSQL_PASSWORD', 'MYSQL_DB',
-            'AUTH0_DOMAIN', 'AUTH0_API_AUDIENCE'
-        ]
-        missing = [var for var in required_vars if not os.getenv(var)]
-        if missing:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
     
     def _validate_security(self):
         """Validate security-critical settings"""
         if self.DEBUG:
             raise ValueError("DEBUG must be False in production")
-
-class TestingConfig(Config):
-    """Testing configuration."""
-    TESTING = True
-    DEBUG = True
-    MYSQL_DB = 'spending_tracker_test'
-    
-    def __init__(self):
-        self._validate_config()
-    
-    def _validate_config(self):
-        required_vars = [
-            'MYSQL_HOST', 'MYSQL_USER', 
-            'MYSQL_PASSWORD'
-        ]
-        missing = [var for var in required_vars if not os.getenv(var)]
-        if missing:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+        
+        if not self.SECRET_KEY or self.SECRET_KEY == 'your-secret-key-should-be-random-and-secure':
+            raise ValueError("Production requires a strong SECRET_KEY")
+        
+        if not self.CORS_ORIGINS or self.CORS_ORIGINS == ['']:
+            logging.warning("No CORS_ORIGINS specified. API may be inaccessible from frontend.")
+        
+        if self.CORS_ENABLED and '*' in self.CORS_ORIGINS:
+            logging.warning("SECURITY RISK: CORS is configured to allow any origin (*). This is not recommended for production.")
